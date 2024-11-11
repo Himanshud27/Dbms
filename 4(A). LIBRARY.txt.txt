@@ -1,0 +1,75 @@
+CREATE TABLE Borrower (
+  Roll_no INT PRIMARY KEY,
+  Name VARCHAR(100),
+  DateofIssue DATE,
+  NameofBook VARCHAR(100),
+  Status CHAR(1)
+);
+
+CREATE TABLE Fine (
+  Roll_no INT,
+  Date1 DATE,
+  Amt INT,
+  FOREIGN KEY (Roll_no) REFERENCES Borrower(Roll_no)
+);
+CREATE OR REPLACE PROCEDURE CalculateFine (p_roll_no INT, p_book_name VARCHAR) IS
+  v_date_of_issue DATE;
+  v_current_date DATE := SYSDATE;  -- Use current system date
+  v_fine_amt INT := 0;
+  v_status CHAR(1);
+  v_days INT;
+BEGIN
+  -- Step 1: Check if the book exists and retrieve the issue date and status
+  BEGIN
+    SELECT DateofIssue, Status INTO v_date_of_issue, v_status
+    FROM Borrower
+    WHERE Roll_no = p_roll_no AND NameofBook = p_book_name;
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      DBMS_OUTPUT.PUT_LINE('No record found for the given Roll_no or Book Name.');
+      RETURN;  -- Exit if no record is found
+  END;
+
+  -- Step 2: Check if the book is already returned (Status 'R')
+  IF v_status = 'R' THEN
+    DBMS_OUTPUT.PUT_LINE('The book has already been returned.');
+    RETURN;  -- Exit if book has already been returned
+  END IF;
+
+  -- Step 3: Calculate the number of overdue days
+  v_days := v_current_date - v_date_of_issue;
+
+  -- Step 4: Calculate the fine based on overdue days
+  IF v_days > 30 THEN
+    v_fine_amt := v_days * 50;  -- Rs. 50 per day for overdue more than 30 days
+  ELSIF v_days >= 15 THEN
+    v_fine_amt := v_days * 5;  -- Rs. 5 per day for overdue between 15 and 30 days
+  END IF;
+
+  -- Step 5: Update the Borrower Table to mark the book as returned (Status 'R')
+  UPDATE Borrower
+  SET Status = 'R'
+  WHERE Roll_no = p_roll_no AND NameofBook = p_book_name;
+
+  -- Step 6: If a fine is calculated, insert the fine into the Fine table
+  IF v_fine_amt > 0 THEN
+    INSERT INTO Fine (Roll_no, Date1, Amt)
+    VALUES (p_roll_no, v_current_date, v_fine_amt);  -- Store the fine in the Fine table
+  END IF;
+
+  -- Commit changes to database
+  COMMIT;
+
+  -- Step 7: Display the fine amount if applicable
+  IF v_fine_amt > 0 THEN
+    DBMS_OUTPUT.PUT_LINE('The fine for the book "' || p_book_name || '" is Rs. ' || v_fine_amt);
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('No fine is applicable for the book "' || p_book_name || '".');
+  END IF;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Catch any other exceptions
+    DBMS_OUTPUT.PUT_LINE('An error occurred: ' || SQLERRM);
+    ROLLBACK;  -- Rollback any changes if an error occurs
+END;
